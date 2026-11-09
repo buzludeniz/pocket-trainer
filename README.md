@@ -33,7 +33,7 @@ Use any `@company.com` email in the sign-in form, then select a demo role:
 2. Junior: training library → lesson → knowledge check → completion/progress update.
 3. Senior/Dept Head: dashboard → new training → set audience/difficulty → upload source → simulated generation → publish.
 4. Senior/Dept Head: archive or delete active training; changes persist immediately.
-5. Dept Head: compare student progress and skills, then generate an on-screen report and matching CSV download.
+5. Dept Head: compare student progress and skills, then generate an on-screen report with matching CSV and PDF downloads.
 
 ## Proposed revenue model
 
@@ -47,7 +47,6 @@ src/
   SolarSystemScene.jsx  Three.js orbital hero scene, lazy-loaded on the landing page
   App.css               Responsive glassmorphism product UI
   index.css             Global reset and font setup
-  assets/               Static images used by the UI
 ```
 
 ## Data model
