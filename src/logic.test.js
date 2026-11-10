@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   applyTrainingAction, average, buildStudentCsv, cannedLessons, getLearnerRecords, isCompanyEmail,
-  lessonFor, loadStored, people, restoreArchived, seedTrainings, skillAreas, statusForAction, summarizeStudents,
+  lessonFor, loadQuizHistory, loadStored, MAX_QUIZ_ATTEMPTS, people, QUIZ_HISTORY_KEY, quizHistoryReducer, sanitizeQuizHistory, scoreQuiz, summarizeQuizHistory, restoreArchived, seedTrainings, skillAreas, statusForAction, summarizeStudents,
 } from './logic'
 
 describe('training status', () => {
@@ -100,5 +100,81 @@ describe('loadStored', () => {
     const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
     expect(loadStored('k', 'fb')).toBe('fb')
     spy.mockRestore()
+  })
+})
+
+describe('quiz history reducer', () => {
+  const rec = (trainingId, score, date = '2026-01-01T00:00:00.000Z') => ({ type: 'record', trainingId, score, date })
+  it('appends attempts without mutating state', () => {
+    const start = []
+    const next = quizHistoryReducer(quizHistoryReducer(start, rec('t1', 80)), rec('t2', 50.4))
+    expect(next).toEqual([
+      { trainingId: 't1', score: 80, date: '2026-01-01T00:00:00.000Z' },
+      { trainingId: 't2', score: 50, date: '2026-01-01T00:00:00.000Z' },
+    ])
+    expect(start).toEqual([])
+  })
+  it('ignores invalid attempts and unknown actions', () => {
+    const state = [{ trainingId: 't1', score: 90, date: 'd' }]
+    expect(quizHistoryReducer(state, rec('', 50))).toBe(state)
+    expect(quizHistoryReducer(state, rec('t1', 101))).toBe(state)
+    expect(quizHistoryReducer(state, rec('t1', NaN))).toBe(state)
+    expect(quizHistoryReducer(state, rec('t1', 50, ''))).toBe(state)
+    expect(quizHistoryReducer(state, { type: 'nope' })).toBe(state)
+  })
+  it('clears and caps history length', () => {
+    expect(quizHistoryReducer([{ trainingId: 't1', score: 1, date: 'd' }], { type: 'clear' })).toEqual([])
+    let state = []
+    for (let i = 0; i < MAX_QUIZ_ATTEMPTS + 5; i++) state = quizHistoryReducer(state, rec('t1', i % 100))
+    expect(state).toHaveLength(MAX_QUIZ_ATTEMPTS)
+  })
+  it('scores answers as a percentage', () => {
+    const lesson = { questions: [{ correct: 0 }, { correct: 1 }] }
+    expect(scoreQuiz(lesson, [0, 1])).toBe(100)
+    expect(scoreQuiz(lesson, [0, 0])).toBe(50)
+    expect(scoreQuiz(lesson, [])).toBe(0)
+    expect(scoreQuiz({ questions: [] }, [])).toBe(0)
+  })
+  it('summarizes history', () => {
+    expect(summarizeQuizHistory([])).toBeNull()
+    expect(summarizeQuizHistory([{ score: 50 }, { score: 100 }])).toEqual({ attempts: 2, latest: 100, average: 75 })
+  })
+})
+
+describe('quiz history persistence', () => {
+  it('round-trips through localStorage', () => {
+    const history = [{ trainingId: 't1', score: 88, date: '2026-02-02T00:00:00.000Z' }]
+    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify(history))
+    expect(loadQuizHistory()).toEqual(history)
+  })
+  it('falls back to empty on corrupt or malformed storage', () => {
+    localStorage.setItem(QUIZ_HISTORY_KEY, '{not json')
+    expect(loadQuizHistory()).toEqual([])
+    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify({ a: 1 }))
+    expect(loadQuizHistory()).toEqual([])
+    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify([null, 5, { trainingId: 't1', score: 'x', date: 'd' }, { trainingId: 't2', score: 70, date: 'd', extra: 1 }]))
+    expect(loadQuizHistory()).toEqual([{ trainingId: 't2', score: 70, date: 'd' }])
+    expect(sanitizeQuizHistory(undefined)).toEqual([])
+  })
+})
+
+describe('learner records with quiz history', () => {
+  it('keeps sample data when there is no history', () => {
+    const [aisha] = getLearnerRecords(seedTrainings, { t1: 78, t2: 54 }, [])
+    expect(aisha.score).toBe(82)
+    expect(aisha.attempts).toBeUndefined()
+  })
+  it('uses real history for the demo junior only', () => {
+    const history = [{ trainingId: 't1', score: 60, date: 'a' }, { trainingId: 't1', score: 100, date: 'b' }]
+    const [aisha, lucas, sam] = getLearnerRecords(seedTrainings, { t1: 78, t2: 54 }, history)
+    expect(aisha).toMatchObject({ score: 100, attempts: 2, averageScore: 80 })
+    expect(lucas.score).toBe(70)
+    expect(sam.score).toBe(94)
+  })
+  it('applies history even when no junior trainings are current', () => {
+    const none = seedTrainings.map(t => ({ ...t, status: 'Archived' }))
+    const [aisha] = getLearnerRecords(none, {}, [{ trainingId: 't1', score: 40, date: 'a' }])
+    expect(aisha.score).toBe(40)
+    expect(aisha.progress).toBe(78)
   })
 })

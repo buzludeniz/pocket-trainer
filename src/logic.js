@@ -29,12 +29,53 @@ export const skillAreas = [
   { key: 'teamwork', label: 'Teamwork', color: '#c66c53' },
 ]
 
-export function getLearnerRecords(trainings, progress) {
+export const QUIZ_HISTORY_KEY = 'pt-quiz-history'
+export const MAX_QUIZ_ATTEMPTS = 200
+
+const isValidAttempt = (a) => a && typeof a === 'object' && typeof a.trainingId === 'string' && a.trainingId !== '' &&
+  Number.isFinite(a.score) && a.score >= 0 && a.score <= 100 && typeof a.date === 'string' && a.date !== ''
+
+// Drops anything that is not a well-formed attempt, so corrupt storage degrades to "no history".
+export const sanitizeQuizHistory = (raw) =>
+  (Array.isArray(raw) ? raw.filter(isValidAttempt).map(({ trainingId, score, date }) => ({ trainingId, score, date })) : [])
+    .slice(-MAX_QUIZ_ATTEMPTS)
+
+export const loadQuizHistory = () => sanitizeQuizHistory(loadStored(QUIZ_HISTORY_KEY, []))
+
+// Pure reducer: { type: 'record', trainingId, score, date } appends an attempt; { type: 'clear' } empties it.
+export function quizHistoryReducer(state, action) {
+  if (action.type === 'record') {
+    const attempt = { trainingId: action.trainingId, score: Math.round(action.score), date: action.date }
+    return isValidAttempt(attempt) ? [...state, attempt].slice(-MAX_QUIZ_ATTEMPTS) : state
+  }
+  if (action.type === 'clear') return []
+  return state
+}
+
+// Percentage of questions answered correctly (answers = chosen option index per question).
+export const scoreQuiz = (lesson, answers) =>
+  lesson.questions.length === 0 ? 0 : Math.round((lesson.questions.filter((q, i) => answers[i] === q.correct).length / lesson.questions.length) * 100)
+
+export function summarizeQuizHistory(history) {
+  if (history.length === 0) return null
+  return { attempts: history.length, latest: history[history.length - 1].score, average: average(history.map(a => a.score)) }
+}
+
+// The signed-in demo Junior is Aisha (u1); only her record is driven by real data.
+export const DEMO_JUNIOR_ID = 'u1'
+
+export function getLearnerRecords(trainings, progress, history = []) {
   const activeJuniorTrainings = trainings.filter(training => training.audience === 'Junior' && training.status === 'Current')
+  const summary = summarizeQuizHistory(history)
   return people.filter(person => person.role === 'Junior').map(person => {
-    if (person.id !== 'u1' || activeJuniorTrainings.length === 0) return person
-    const currentProgress = activeJuniorTrainings.map(training => progress[training.id] ?? 0)
-    return { ...person, progress: Math.round(currentProgress.reduce((total, value) => total + value, 0) / currentProgress.length) }
+    if (person.id !== DEMO_JUNIOR_ID) return person
+    let record = person
+    if (activeJuniorTrainings.length > 0) {
+      const currentProgress = activeJuniorTrainings.map(training => progress[training.id] ?? 0)
+      record = { ...record, progress: Math.round(currentProgress.reduce((total, value) => total + value, 0) / currentProgress.length) }
+    }
+    if (summary) record = { ...record, score: summary.latest, attempts: summary.attempts, averageScore: summary.average }
+    return record
   })
 }
 

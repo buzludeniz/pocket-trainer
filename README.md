@@ -83,6 +83,10 @@ Authentication is a UI-only gate. It accepts only addresses ending in `@company.
 
 Trainings and junior progress are stored in this browser using `localStorage` (`pt-trainings` and `pt-progress`). They survive refreshes on this device only and are neither encrypted nor shared between users.
 
+### Quiz history
+
+Each finished quiz is saved as `{ trainingId, score, date }` under the `pt-quiz-history` localStorage key (via `quizHistoryReducer` in `src/logic.js`). The demo Junior (Aisha) shows real scores in the Junior dashboard/progress view and Senior follow-up screens once she has history; other learners keep sample data.
+
 ### Student report
 
 The report uses locally saved training completion for Aisha and sample skill evaluations, capabilities, and issues for the demo learners. Generate report downloads both a CSV and a PDF in the browser; no data is transmitted to a server.
