@@ -8,31 +8,12 @@ import {
   Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import './App.css'
+import {
+  applyTrainingAction, buildStudentCsv, cannedLessons, getLearnerRecords, isCompanyEmail, lessonFor,
+  loadStored, restoreArchived, seedTrainings, skillAreas, summarizeStudents,
+} from './logic'
 
 const SolarSystemScene = lazy(() => import('./SolarSystemScene'))
-
-const seedTrainings = [
-  { id: 't1', title: 'HR Essentials', difficulty: 3, audience: 'Junior', status: 'Current', source: 'HR handbook.pdf', completion: 78, createdBy: 'Maria' },
-  { id: 't2', title: 'Workplace Safety', difficulty: 5, audience: 'Junior', status: 'Current', source: 'Safety guide.docx', completion: 65, createdBy: 'Ethan' },
-  { id: 't3', title: 'Conflict Resolution', difficulty: 7, audience: 'Senior', status: 'Current', source: 'Team playbook.pdf', completion: 81, createdBy: 'Maria' },
-  { id: 't4', title: 'GDPR Awareness', difficulty: 8, audience: 'Dept Head', status: 'Archived', source: 'GDPR notes.pdf', completion: 41, createdBy: 'Maria' },
-]
-
-const people = [
-  { id: 'u1', name: 'Aisha Khan', role: 'Junior', email: 'aisha@company.com', progress: 78, score: 82, skills: { communication: 82, safety: 74, problemSolving: 78, teamwork: 88 }, capabilities: ['Clear handoffs', 'Hazard reporting', 'Peer feedback'], issues: ['Needs more practice prioritizing urgent requests'] },
-  { id: 'u2', name: 'Lucas Hart', role: 'Junior', email: 'lucas@company.com', progress: 54, score: 70, skills: { communication: 68, safety: 79, problemSolving: 61, teamwork: 72 }, capabilities: ['Safe-work checks', 'Team updates'], issues: ['Conflict resolution assessment needs a retake', 'Training progress is below the team average'] },
-  { id: 'u3', name: 'Sam Rivers', role: 'Junior', email: 'sam@company.com', progress: 91, score: 94, skills: { communication: 94, safety: 96, problemSolving: 89, teamwork: 92 }, capabilities: ['Incident response', 'Coaching peers', 'Consistent documentation'], issues: ['No open issues'] },
-  { id: 'u4', name: 'Ethan Cole', role: 'Senior', email: 'ethan@company.com', progress: 76, score: 88 },
-  { id: 'u5', name: 'Danielle Wu', role: 'Senior', email: 'danielle@company.com', progress: 72, score: 86 },
-  { id: 'u6', name: 'Maria Chen', role: 'Dept Head', email: 'maria@company.com', progress: 100, score: 98 },
-]
-
-const cannedLessons = [
-  { title: 'Clear Communication', summary: 'A short guide to making expectations visible and easier to act on.', points: ['State the outcome before the task.', 'Confirm the owner and next deadline.', 'Leave a written trail for decisions.'], questions: [{ prompt: 'Which habit best improves team clarity?', options: ['Clear written expectations', 'Changing goals weekly', 'Avoiding feedback', 'Keeping decisions informal'], correct: 0 }, { prompt: 'What should follow an agreed decision?', options: ['A written next step', 'A longer meeting', 'No follow-up', 'A new owner'], correct: 0 }] },
-  { title: 'Safe Work, Every Day', summary: 'Core principles for recognizing risk and responding with confidence.', points: ['Notice hazards before they become incidents.', 'Use the reporting path your team has agreed on.', 'Document the learning after a response.'], questions: [{ prompt: 'What is the best first response to an unsafe condition?', options: ['Report it and remove risk if safe', 'Ignore it', 'Wait until tomorrow', 'Only document it later'], correct: 0 }, { prompt: 'When does safety culture start?', options: ['Before an incident', 'After an accident', 'During drills only', 'When asked'], correct: 0 }] },
-]
-
-const loadStored = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback } catch { return fallback } }
 
 function App() {
   const [screen, setScreen] = useState('landing')
@@ -58,9 +39,9 @@ function App() {
   const logout = () => { setScreen('landing'); setView('dashboard') }
   const openTraining = (training) => { setActiveTraining(training); setView('lesson') }
   const showNotice = (message) => { setNotice(message); window.setTimeout(() => setNotice(''), 2600) }
-  const changeTraining = (id, action) => { setTrainings(current => current.map(t => t.id === id ? { ...t, status: action === 'archive' ? 'Archived' : action === 'restore' ? 'Current' : 'Deleted' } : t)); showNotice(action === 'archive' ? 'Training moved to Archive.' : action === 'restore' ? 'Training restored to Current.' : 'Training deleted.') }
+  const changeTraining = (id, action) => { setTrainings(current => applyTrainingAction(current, id, action)); showNotice(action === 'archive' ? 'Training moved to Archive.' : action === 'restore' ? 'Training restored to Current.' : 'Training deleted.') }
   const publishTraining = (training) => { setTrainings(current => [training, ...current]); setActiveTraining(training); setView('dashboard'); showNotice(training.status === 'Draft' ? 'Draft saved. Finish it whenever you are ready.' : 'Training published and ready for learners.') }
-  const restoreAll = () => { setTrainings(current => current.map(t => t.status === 'Archived' ? { ...t, status:'Current' } : t)); showNotice('All archived trainings have been restored.') }
+  const restoreAll = () => { setTrainings(current => restoreArchived(current)); showNotice('All archived trainings have been restored.') }
 
   let page
   if (screen === 'landing') page = <Landing onBegin={begin} onReadBrief={() => setScreen('brief')} />
@@ -127,7 +108,7 @@ function ProductBrief({ onBack, onBegin }) {
 
 function Auth({ onBack, onEnter }) {
   const [email, setEmail] = useState('maria@company.com'); const [chosenRole, setChosenRole] = useState('Dept Head'); const [error, setError] = useState('')
-  const submit = (e) => { e.preventDefault(); if (!email.trim().toLowerCase().endsWith('@company.com')) return setError('Use your company email (for example, maria@company.com).'); onEnter(chosenRole) }
+  const submit = (e) => { e.preventDefault(); if (!isCompanyEmail(email)) return setError('Use your company email (for example, maria@company.com).'); onEnter(chosenRole) }
   return <main className="auth-page"><div className="ambient ambient-one" /><div className="grain" /><section className="auth-card glass-panel"><button className="back-button" onClick={onBack}><ArrowLeft size={17} /> Back</button><Logo /><p className="eyebrow">Welcome to the learning room</p><h2>Sign in and<br /><em>make progress.</em></h2><form onSubmit={submit}><label>Company email<input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@company.com" /></label><label>Your demo role<select value={chosenRole} onChange={e => setChosenRole(e.target.value)}><option>Junior</option><option>Senior</option><option>Dept Head</option></select></label>{error && <p className="form-error">{error}</p>}<button className="button button-dark" type="submit">Continue <ArrowRight size={17} /></button></form><p className="auth-help">Can&apos;t log in? Contact your company ID administrator.</p></section></main>
 }
 
@@ -148,21 +129,6 @@ function ArchiveView({ trainings, onRestore, onRestoreAll }) { const archived = 
 function DraftView({ trainings, onPublish, onCreate }) { const drafts = trainings.filter(t => t.status === 'Draft'); return <section className="archive-view"><div className="archive-intro panel"><span className="export-icon"><FileUp size={27} /></span><div><p className="eyebrow">Unpublished work</p><h2>Ideas worth finishing.</h2><p>Drafts stay private until you are ready to put them in front of learners.</p></div></div>{drafts.length ? <div className="archive-grid">{drafts.map(t=><article className="archive-card panel" key={t.id}><div><span className="level">LEVEL {t.difficulty}</span><h3>{t.title}</h3><p>{t.audience} audience · saved just now</p></div><button className="button button-dark compact" onClick={() => onPublish(t.id)}>Publish draft <ArrowRight size={16} /></button></article>)}</div> : <section className="empty-archive panel"><FileUp size={28} /><h2>No drafts yet.</h2><p>Save a training draft when you have an idea but not the source material ready.</p><button className="button button-dark compact" onClick={onCreate}><Plus size={15} /> Create a draft</button></section>}</section> }
 
 
-const skillAreas = [
-  { key: 'communication', label: 'Communication', color: '#729d48' },
-  { key: 'safety', label: 'Safety', color: '#e6a33e' },
-  { key: 'problemSolving', label: 'Problem solving', color: '#6588c5' },
-  { key: 'teamwork', label: 'Teamwork', color: '#c66c53' },
-]
-
-function getLearnerRecords(trainings, progress) {
-  const activeJuniorTrainings = trainings.filter(training => training.audience === 'Junior' && training.status === 'Current')
-  return people.filter(person => person.role === 'Junior').map(person => {
-    if (person.id !== 'u1' || activeJuniorTrainings.length === 0) return person
-    const currentProgress = activeJuniorTrainings.map(training => progress[training.id] ?? 0)
-    return { ...person, progress: Math.round(currentProgress.reduce((total, value) => total + value, 0) / currentProgress.length) }
-  })
-}
 
 function Dashboard(props) {
   const students = getLearnerRecords(props.trainings, props.progress)
@@ -220,7 +186,7 @@ function CreateTraining({ onPublish, onCancel }) {
   return <form className="create-form panel" onSubmit={generate}><div className="form-header"><p className="eyebrow">New training</p><h2>Start with what<br />you already <em>know.</em></h2></div><div className="form-grid"><label>Training name<input value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Customer care essentials" /></label><label>Audience<select value={audience} onChange={e=>setAudience(e.target.value)}><option>Junior</option><option>Senior</option><option>Dept Head</option></select></label></div><label className="difficulty-label">Choose difficulty <b>Level {difficulty}</b></label><div className="difficulty-row">{[1,2,3,4,5,6,7,8,9,10].map(n=><button type="button" onClick={()=>setDifficulty(n)} className={n===difficulty?'selected':''} key={n}>{n}</button>)}</div><label className="dropzone"><FileUp size={25} /><strong>{file ? file.name : 'Drop a document here'}</strong><span>{file ? 'Ready to generate' : 'PDF, DOCX or TXT — the demo does not read file contents.'}</span><input type="file" onChange={e=>setFile(e.target.files?.[0])} /></label><div className="form-buttons"><button type="button" className="quiet-button" onClick={onCancel}>Cancel</button><button type="button" className="quiet-button" onClick={saveDraft}>Save draft</button><button className="button button-dark" type="submit" disabled={!file}>Generate training <Sparkles size={17} /></button></div></form>
 }
 
-function Lesson({ training, onBack, setProgress }) { const lesson = training.lesson || cannedLessons[training.id === 't2' ? 1 : 0]; const [mode,setMode] = useState('read'); const [answer,setAnswer] = useState(null); const [question,setQuestion] = useState(0); const complete = () => { setProgress(p=>({...p,[training.id]:100})); setMode('done') }; return <section className="lesson-wrap"><button className="back-button" onClick={onBack}><ArrowLeft size={17} /> Back to training</button>{mode === 'read' && <article className="lesson-card panel"><span className="level">LEVEL {training.difficulty}</span><h2>{training.title}</h2><p className="lesson-summary">{lesson.summary}</p><div className="lesson-points">{lesson.points.map(point=><p key={point}><span><Check size={15} /></span>{point}</p>)}</div><button className="button button-dark" onClick={()=>setMode('quiz')}>Take the quick check <CirclePlay size={17} /></button></article>}{mode === 'quiz' && <article className="lesson-card panel"><p className="eyebrow">Knowledge check {question + 1} / {lesson.questions.length}</p><h2>{lesson.questions[question].prompt}</h2><div className="options">{lesson.questions[question].options.map((option,i)=><button key={option} disabled={answer !== null} onClick={()=>setAnswer(i)} className={answer === null ? '' : i === lesson.questions[question].correct ? 'correct' : answer === i ? 'wrong' : ''}><span>{String.fromCharCode(65+i)}</span>{option}</button>)}</div>{answer !== null && <button className="button button-dark" onClick={()=> question === lesson.questions.length - 1 ? complete() : (setQuestion(question+1),setAnswer(null))}>{question === lesson.questions.length - 1 ? 'Finish training' : 'Next question'} <ArrowRight size={17} /></button>}</article>}{mode === 'done' && <article className="lesson-card panel completion-card"><span className="generator-check"><Check size={25} /></span><p className="eyebrow">Training complete</p><h2>That knowledge is yours now.</h2><p>Your progress has been updated. Keep your learning streak alive with another short lesson.</p><button className="button button-dark" onClick={onBack}>Back to my training <ArrowRight size={17} /></button></article>}</section> }
+function Lesson({ training, onBack, setProgress }) { const lesson = lessonFor(training); const [mode,setMode] = useState('read'); const [answer,setAnswer] = useState(null); const [question,setQuestion] = useState(0); const complete = () => { setProgress(p=>({...p,[training.id]:100})); setMode('done') }; return <section className="lesson-wrap"><button className="back-button" onClick={onBack}><ArrowLeft size={17} /> Back to training</button>{mode === 'read' && <article className="lesson-card panel"><span className="level">LEVEL {training.difficulty}</span><h2>{training.title}</h2><p className="lesson-summary">{lesson.summary}</p><div className="lesson-points">{lesson.points.map(point=><p key={point}><span><Check size={15} /></span>{point}</p>)}</div><button className="button button-dark" onClick={()=>setMode('quiz')}>Take the quick check <CirclePlay size={17} /></button></article>}{mode === 'quiz' && <article className="lesson-card panel"><p className="eyebrow">Knowledge check {question + 1} / {lesson.questions.length}</p><h2>{lesson.questions[question].prompt}</h2><div className="options">{lesson.questions[question].options.map((option,i)=><button key={option} disabled={answer !== null} onClick={()=>setAnswer(i)} className={answer === null ? '' : i === lesson.questions[question].correct ? 'correct' : answer === i ? 'wrong' : ''}><span>{String.fromCharCode(65+i)}</span>{option}</button>)}</div>{answer !== null && <button className="button button-dark" onClick={()=> question === lesson.questions.length - 1 ? complete() : (setQuestion(question+1),setAnswer(null))}>{question === lesson.questions.length - 1 ? 'Finish training' : 'Next question'} <ArrowRight size={17} /></button>}</article>}{mode === 'done' && <article className="lesson-card panel completion-card"><span className="generator-check"><Check size={25} /></span><p className="eyebrow">Training complete</p><h2>That knowledge is yours now.</h2><p>Your progress has been updated. Keep your learning streak alive with another short lesson.</p><button className="button button-dark" onClick={onBack}>Back to my training <ArrowRight size={17} /></button></article>}</section> }
 
 function JuniorProgress({ trainings, progress }) { return <section className="panel progress-detail"><p className="eyebrow">Your chapter list</p><h2>A little further, every day.</h2>{trainings.filter(t=>t.audience==='Junior' && t.status === 'Current').map(t=><div className="chapter" key={t.id}><span>{t.title}</span><div><i style={{width:`${progress[t.id] || 0}%`}} /></div><b>{progress[t.id] || 0}%</b></div>)}</section> }
 function ExportData() {
@@ -243,18 +209,7 @@ function ExportData() {
     const trainings = loadStored('pt-trainings', seedTrainings)
     const progress = loadStored('pt-progress', { t1: 78, t2: 54 })
     const students = getLearnerRecords(trainings, progress)
-    const csvCell = value => `"${String(value ?? '').replaceAll('"', '""')}"`
-    const headers = ['Student', 'Email', 'Progress %', 'Latest score %', ...skillAreas.map(skill => `${skill.label} %`), 'Capabilities achieved', 'Issues faced']
-    const rows = students.map(student => [
-      student.name,
-      student.email,
-      student.progress,
-      student.score,
-      ...skillAreas.map(skill => student.skills[skill.key]),
-      student.capabilities.join('; '),
-      student.issues.join('; '),
-    ])
-    const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n')
+    const csv = buildStudentCsv(students)
     const downloadUrl = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a')
     link.href = downloadUrl
@@ -266,9 +221,7 @@ function ExportData() {
 
     const reportSummary = {
       students,
-      averageProgress: Math.round(students.reduce((total, student) => total + student.progress, 0) / students.length),
-      averageScore: Math.round(students.reduce((total, student) => total + student.score, 0) / students.length),
-      attentionCount: students.filter(student => student.progress < 65 || student.score < 75).length,
+      ...summarizeStudents(students),
       generatedAt: new Date().toLocaleString(),
     }
     const { jsPDF, autoTable } = pdfTools
