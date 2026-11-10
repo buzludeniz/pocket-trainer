@@ -27,6 +27,14 @@ Use any `@company.com` email in the sign-in form, then select a demo role:
 - Senior — view the team dashboard, search juniors, create training, archive/delete training.
 - Dept Head — all management actions plus student development charts and progress reports.
 
+## Deploying to GitHub Pages
+
+`.github/workflows/pages.yml` is prepared but **not enabled**: it only runs on manual dispatch. It builds with `vite build --base=/pocket-trainer/` (the base path is applied only in that workflow; local dev and tests are unaffected). One-time steps for the repo owner:
+
+1. Repo **Settings > Pages > Build and deployment > Source: GitHub Actions**.
+2. Go to **Actions > Deploy to GitHub Pages > Run workflow**. The site is published at `https://<owner>.github.io/pocket-trainer/`.
+3. Optional: to deploy on every push to `main`, change the trigger in `pages.yml` to `on: push: branches: [main]` (an example is in the file's comments).
+
 ## Product flows
 
 1. Landing → optional Product thinking brief → company-email gate → role-based workspace.
