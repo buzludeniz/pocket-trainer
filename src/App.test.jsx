@@ -74,4 +74,54 @@ describe('App', () => {
     expect(screen.getByText('Saved One')).toBeInTheDocument()
     expect(document.documentElement.dataset.theme).toBe('dark')
   })
+
+  async function takeQuiz(user, optionPattern) {
+    await user.click(screen.getAllByRole('button', { name: /resume/i })[0])
+    await user.click(screen.getByRole('button', { name: /quick check/i }))
+    for (let i = 0; i < 2; i++) {
+      await user.click(screen.getByRole('button', { name: optionPattern }))
+      await user.click(screen.getByRole('button', { name: /next question|finish training/i }))
+    }
+  }
+
+  it('saves each quiz attempt to one storage key', async () => {
+    const user = await signIn('Junior')
+    await takeQuiz(user, /^B(?!ack)/)
+    const history = JSON.parse(localStorage.getItem('pt-quiz-history'))
+    expect(history).toHaveLength(1)
+    expect(history[0]).toMatchObject({ trainingId: 't1', score: 0 })
+    expect(Number.isNaN(Date.parse(history[0].date))).toBe(false)
+  })
+
+  it('junior progress view lists real quiz results', async () => {
+    localStorage.setItem('pt-quiz-history', JSON.stringify([{ trainingId: 't1', score: 50, date: '2026-03-03T12:00:00.000Z' }]))
+    const user = await signIn('Junior')
+    expect(screen.getByText('From 1 quiz attempt')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /progress/i }))
+    const list = screen.getByRole('list', { name: /quiz history/i })
+    expect(within(list).getByText('HR Essentials')).toBeInTheDocument()
+    expect(within(list).getByText('50%')).toBeInTheDocument()
+  })
+
+  it('junior keeps sample data without history', async () => {
+    await signIn('Junior')
+    expect(screen.getByText('86%')).toBeInTheDocument()
+    expect(screen.queryByText(/quiz attempt/i)).not.toBeInTheDocument()
+  })
+
+  it('senior follow-up uses real history for the learner who has it', async () => {
+    localStorage.setItem('pt-quiz-history', JSON.stringify([{ trainingId: 't1', score: 40, date: 'x' }, { trainingId: 't1', score: 65, date: 'y' }]))
+    await signIn('Senior')
+    const card = screen.getByRole('heading', { name: 'Aisha Khan' }).closest('article')
+    expect(card).toHaveTextContent('65% latest score · 2 quiz attempts')
+    const lucas = screen.getByRole('heading', { name: 'Lucas Hart' }).closest('article')
+    expect(lucas).toHaveTextContent('70% latest score')
+    expect(lucas).not.toHaveTextContent(/quiz attempt/)
+  })
+
+  it('survives corrupt quiz history in storage', async () => {
+    localStorage.setItem('pt-quiz-history', '{broken')
+    await signIn('Senior')
+    expect(screen.getByRole('heading', { name: 'Aisha Khan' }).closest('article')).toHaveTextContent('82% latest score')
+  })
 })
